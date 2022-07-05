@@ -27,6 +27,11 @@ jobs:
       with:
         arguments: build
 
+    - name: Install jq
+      run: |
+       sudo apt-get update
+       sudo apt-get -y install jq
+    
     - uses: actions/setup-node@v2
       with:
          node-version: '14'
@@ -35,43 +40,35 @@ jobs:
     - run: snyk auth ${{ secrets.SNYK_TOKEN }} # snyk authentication using GH secrets
     
     - name: Run Snyk test on current branch $GITHUB_HEAD_REF
-      run: snyk test --all-projects > current_branch.json || true
-      
-    - name: Checkout target branch
       run: |
-           git stash 
-           git fetch origin $GITHUB_BASE_REF
-           git checkout $GITHUB_BASE_REF
-           ls -al 
-           git rev-parse --abbrev-ref HEAD
-           
-    - name: Run Snyk chek on target branch $GITHUB_BASE_REF
-      run:  snyk test --json --all-projects  > dest_branch.json || true #run snyk test on destination branch
-      
-    - name: Install jq
-      run: apt-get update && apt-get -y install jq
-      
-    - name: Run calculations
-      run: |
-          cat dest_branch.json | jq -r '.vulnerabilities[] | .id + " " + .moduleName' | sort | uniq > db.txt
-          cat current_branch.json | jq -r '.vulnerabilities[] | .id + " " + .moduleName' | sort | uniq > cb.txt
-          echo "calculating value"
-          diff --side-by-side --suppress-common-lines db.txt cb.txt || true
-          diffcount=$((diff --side-by-side --suppress-common-lines db.txt cb.txt || true) | wc -l)
-          echo "dc = $diffcount"
-          newIssuecount=$((diff --side-by-side --suppress-common-lines db.txt cb.txt || true) | grep '>' | wc -l)
-          echo "newIssuecount = $newIssuecount" 
-          fixIssueCount=$((diff --side-by-side --suppress-common-lines cb.txt db.txt || true) | grep '<' | wc -l)
-          echo "fixIssueCount = $fixIssueCount" 
-          if [[ "$diffcount" -eq 0  ]] ; then echo " No new Vulnerabilities in the PR" ; exit 0 ;fi
+       snyk test --all-projects > current_branch.json || true
+       git stash 
+       git fetch origin $GITHUB_BASE_REF
+       git checkout $GITHUB_BASE_REF
+       ls -al 
+       git rev-parse --abbrev-ref HEAD
+       snyk test --json --all-projects  > dest_branch.json || true #run snyk test on destination branch
+       cat dest_branch.json | jq -r '.vulnerabilities[] | .id + " " + .moduleName' | sort | uniq > db.txt
+       cat current_branch.json | jq -r '.vulnerabilities[] | .id + " " + .moduleName' | sort | uniq > cb.txt
+       echo "calculating value"
+       diff --side-by-side --suppress-common-lines db.txt cb.txt || true
+       diffcount=$((diff --side-by-side --suppress-common-lines db.txt cb.txt || true) | wc -l)
+       echo "dc = $diffcount"
+       newIssuecount=$((diff --side-by-side --suppress-common-lines db.txt cb.txt || true) | grep '>' | wc -l)
+       echo "newIssuecount = $newIssuecount" 
+       fixIssueCount=$((diff --side-by-side --suppress-common-lines cb.txt db.txt || true) | grep '<' | wc -l)
+       echo "fixIssueCount = $fixIssueCount" 
+       if [[ "$diffcount" -eq 0  ]] ; then echo " No new Vulnerabilities in the PR" ; exit 0 ;fi
           if [[ "$diffcount" -gt 0  ]] ; 
              then 
-                   if [[ "$fixIssueCount" -gt 0 ]] ;
-                         then 
-                          echo "FYI the build has "$fixIssueCount" less Vulenrabilities compared to $CI_MERGE_REQUEST_TARGET_BRANCH_NAME in the PR. VulnID and package name below";
-                          diff --side-by-side --suppress-common-lines db.txt cb.txt | grep '<' ; exit 0; 
-                      elif [[ "$newIssuecount" -gt 0 ]] ;
-                         echo "Failing the build as "$newIssuecount" New Vulenrabilities have been detected in the PR. VulnID and package name below";  
-                         diff --new-line-format='| %L' db.txt cb.txt | grep '|' ; exit 1; 
-                     fi          
-             fi 
+                 if [[ "$fixIssueCount" -gt 0 ]] ;
+                   then 
+                      echo "FYI the build has "$fixIssueCount" less Vulenrabilities compared to $CI_MERGE_REQUEST_TARGET_BRANCH_NAME in the PR. VulnID and package name below";
+                      diff --side-by-side --suppress-common-lines db.txt cb.txt | grep '<' ; exit 0; 
+                  fi
+                  if [[ "$newIssuecount" -gt 0 ]] ;
+                    then
+                    echo "Failing the build as "$newIssuecount" New Vulenrabilities have been detected in the PR. VulnID and package name below";  
+                    diff --new-line-format='| %L' db.txt cb.txt | grep '|' ; exit 1; 
+                   fi          
+            fi 
