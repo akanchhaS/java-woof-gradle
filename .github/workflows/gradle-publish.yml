@@ -49,7 +49,9 @@ jobs:
       run:  snyk test --json --all-projects  > dest_branch.json || true #run snyk test on destination branch
       
     - name: Install jq
-      run: apt-get update && apt-get -y install jq
+      run: |
+       apt-get update
+       apt-get -y install jq
       
     - name: Run calculations
       run: |
